@@ -6,18 +6,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class Main {
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     static void main() {
         Dotenv dotenv = Dotenv.load();
         String botToken = dotenv.get("BOT_TOKEN");
-        Logger log = LoggerFactory.getLogger(Bot.class);
 
         try (TelegramBotsLongPollingApplication botsApplication = new TelegramBotsLongPollingApplication()) {
             botsApplication.registerBot(botToken, new Bot(botToken));
-            System.out.println("Bot successfully started!");
+            logger.info("Bot successfully started!");
             Thread.currentThread().join();
         } catch (Exception e) {
-            log.error("failed to run main loop", e);
+            logger.error("Failed to run bot!", e);
         }
     }
 }
