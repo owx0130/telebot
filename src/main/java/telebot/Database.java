@@ -7,10 +7,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Database {
-    private final Jedis jedis;
-    private final String USER_PREFIX = "user_";
+    private static final String USER_PREFIX = "user_";
 
-    public record Photo(String fileID, String caption) {}
+    private final Jedis jedis;
 
     public Database(String redisUrl) {
         jedis = new Jedis(URI.create(redisUrl));
@@ -60,5 +59,8 @@ public class Database {
 
     public void uploadPhoto(String fileID, String caption) {
         jedis.set(fileID, caption);
+    }
+
+    public record Photo(String fileID, String caption) {
     }
 }

@@ -28,8 +28,8 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
         telegramClient = new OkHttpTelegramClient(botToken);
         db = new Database(redisUrl);
         List<BotCommand> commands = List.of(
-                new BotCommand("random_pic", "Display a random picture"),
-                new BotCommand("upload_pic", "Upload a new picture")
+                new BotCommand("random_photo", "Display a random photo"),
+                new BotCommand("upload_photo", "Upload a new photo")
         );
         try {
             telegramClient.execute(
@@ -71,36 +71,39 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
                             .build();
                     try {
                         telegramClient.execute(reply);
+                        db.setUserState(chat_id, UserState.AWAITING_CAPTION);
+                        db.setUserStoredPhotoID(chat_id, message.getPhoto().getLast().getFileId());
                     } catch (TelegramApiException e) {
-                        logger.error("Failed to send asking for caption reply", e);
+                        logger.error("Failed to ask for user's caption", e);
                     }
-                    db.setUserStoredPhotoID(chat_id, message.getPhoto().getLast().getFileId());
-                    db.setUserState(chat_id, UserState.AWAITING_CAPTION);
                 } else {
+                    String fileID = message.getPhoto().getLast().getFileId();
+                    String caption = message.getCaption();
+
                     SendMessage reply = SendMessage.builder()
                             .chatId(chat_id)
                             .text("Photo has been uploaded!")
                             .build();
                     try {
                         telegramClient.execute(reply);
+                        db.setUserState(chat_id, UserState.DEFAULT);
+                        db.uploadPhoto(fileID, caption);
                     } catch (TelegramApiException e) {
-                        logger.error("Failed to send true AWAITING_PHOTO reply", e);
+                        logger.error("Failed to inform user of successful photo upload", e);
                     }
-                    db.setUserState(chat_id, UserState.DEFAULT);
                 }
             } else if (message.getText().equals("/cancel")) {
                 SendMessage reply = SendMessage.builder()
                         .chatId(chat_id)
-                        .text("Upload picture operation cancelled!")
+                        .text("Upload photo operation cancelled!")
                         .build();
                 try {
                     telegramClient.execute(reply);
+                    db.setUserState(chat_id, UserState.DEFAULT);
                 } catch (TelegramApiException e) {
-                    logger.error("Failed to send cancel AWAITING_PHOTO reply", e);
+                    logger.error("Failed to inform user that the upload photo operation was cancelled", e);
                 }
-                db.setUserState(chat_id, UserState.DEFAULT);
-            }
-            else {
+            } else {
                 SendMessage reply = SendMessage.builder()
                         .chatId(chat_id)
                         .text("Please send a photo to be uploaded! Or click /cancel to cancel operation.")
@@ -108,13 +111,13 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
                 try {
                     telegramClient.execute(reply);
                 } catch (TelegramApiException e) {
-                    logger.error("Failed to send false AWAITING_PHOTO reply", e);
+                    logger.error("Failed to inform user to upload a photo while in AWAITING_PHOTO state", e);
                 }
             }
         } else if (state.equals(UserState.AWAITING_CAPTION)) {
             if (message.hasText()) {
                 String fileID = db.getUserStoredPhotoID(chat_id);
-                String caption = message.getText();
+                String caption = message.getText().equals("/skip") ? "" : message.getText();
 
                 SendMessage reply = SendMessage.builder()
                         .chatId(chat_id)
@@ -122,28 +125,28 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
                         .build();
                 try {
                     telegramClient.execute(reply);
+                    db.setUserState(chat_id, UserState.DEFAULT);
+                    db.setUserStoredPhotoID(chat_id, "");
+                    db.uploadPhoto(fileID, caption);
                 } catch (TelegramApiException e) {
-                    logger.error("Failed to send true AWAITING_CAPTION reply", e);
+                    logger.error("Failed to inform user of successful photo upload", e);
                 }
-                db.uploadPhoto(fileID, caption);
-                db.setUserState(chat_id, UserState.DEFAULT);
-                db.setUserStoredPhotoID(chat_id, "");
             } else {
                 SendMessage reply = SendMessage.builder()
                         .chatId(chat_id)
-                        .text("Please write a caption! Or click /cancel to cancel operation.")
+                        .text("Please write a caption! Or click /skip to skip adding a caption.")
                         .build();
                 try {
                     telegramClient.execute(reply);
                 } catch (TelegramApiException e) {
-                    logger.error("Failed to send false AWAITING_CAPTION reply", e);
+                    logger.error("Failed to inform user to write a caption while in AWAITING_CAPTION state", e);
                 }
             }
         }
     }
 
     private void handleText(long chat_id, String text) {
-        if (text.equals("/random_pic")) {
+        if (text.equals("/random_photo")) {
             Database.Photo photo = db.getRandomPhoto();
             SendPhoto reply = SendPhoto.builder()
                     .chatId(chat_id)
@@ -153,19 +156,19 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
             try {
                 telegramClient.execute(reply);
             } catch (TelegramApiException e) {
-                logger.error("Failed to send random_pic reply", e);
+                logger.error("Failed to send a random photo", e);
             }
-        } else if (text.equals("/upload_pic")) {
+        } else if (text.equals("/upload_photo")) {
             SendMessage reply = SendMessage.builder()
                     .chatId(chat_id)
                     .text("Got it! Please send a photo (optionally with captions) in your next message!")
                     .build();
             try {
                 telegramClient.execute(reply);
+                db.setUserState(chat_id, UserState.AWAITING_PHOTO);
             } catch (TelegramApiException e) {
-                logger.error("Failed to send upload_pic reply", e);
+                logger.error("Failed to inform user to upload photo", e);
             }
-            db.setUserState(chat_id, UserState.AWAITING_PHOTO);
         } else {
             SendMessage reply = SendMessage.builder()
                     .chatId(chat_id)
