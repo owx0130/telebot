@@ -8,6 +8,9 @@ import java.util.Map;
 
 public class Database {
     private static final String USER_PREFIX = "user_";
+    private static final String USER_STATE_FIELD = "state";
+    private static final String USER_STORED_PHOTO_ID_FIELD = "storedPhotoID";
+    private static final String PHOTOS_SET_NAME = "photos";
 
     private final Jedis jedis;
 
@@ -19,8 +22,8 @@ public class Database {
         String user_key = USER_PREFIX + chat_id;
         if (!jedis.exists(user_key)) {
             Map<String, String> user_info = new HashMap<>();
-            user_info.put("state", "DEFAULT");
-            user_info.put("storedPhotoID", "");
+            user_info.put(USER_STATE_FIELD, "DEFAULT");
+            user_info.put(USER_STORED_PHOTO_ID_FIELD, "");
 
             jedis.hset(user_key, user_info);
         }
@@ -28,36 +31,34 @@ public class Database {
 
     public UserState getUserState(long chat_id) {
         String user_key = USER_PREFIX + chat_id;
-        String state = jedis.hget(user_key, "state");
+        String state = jedis.hget(user_key, USER_STATE_FIELD);
         return UserState.getEnumState(state);
     }
 
     public void setUserState(long chat_id, UserState state) {
         String user_key = USER_PREFIX + chat_id;
         String string_state = UserState.getStringState(state);
-        jedis.hset(user_key, "state", string_state);
+        jedis.hset(user_key, USER_STATE_FIELD, string_state);
     }
 
     public String getUserStoredPhotoID(long chat_id) {
         String user_key = USER_PREFIX + chat_id;
-        return jedis.hget(user_key, "storedPhotoID");
+        return jedis.hget(user_key, USER_STORED_PHOTO_ID_FIELD);
     }
 
     public void setUserStoredPhotoID(long chat_id, String fileID) {
         String user_key = USER_PREFIX + chat_id;
-        jedis.hset(user_key, "storedPhotoID", fileID);
+        jedis.hset(user_key, USER_STORED_PHOTO_ID_FIELD, fileID);
     }
 
     public Photo getRandomPhoto() {
-        String fileID = jedis.randomKey();
-        while (fileID.startsWith(USER_PREFIX)) {
-            fileID = jedis.randomKey();
-        }
+        String fileID = jedis.srandmember(PHOTOS_SET_NAME);
         String caption = jedis.get(fileID);
         return new Photo(fileID, caption);
     }
 
     public void uploadPhoto(String fileID, String caption) {
+        jedis.sadd(PHOTOS_SET_NAME, fileID);
         jedis.set(fileID, caption);
     }
 
