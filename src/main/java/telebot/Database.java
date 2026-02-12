@@ -5,13 +5,15 @@ import redis.clients.jedis.Jedis;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Random;
 
 public class Database {
     private static final String USER_PREFIX = "user_";
     private static final String USER_STATE_FIELD = "state";
     private static final String USER_STORED_PHOTO_ID_FIELD = "storedPhotoID";
-    private static final String PHOTOS_SET_NAME = "photos";
+    private static final String PHOTOS_LST_NAME = "photos";
 
+    private final Random r = new Random();
     private final Jedis jedis;
 
     public Database(String redisUrl) {
@@ -52,13 +54,16 @@ public class Database {
     }
 
     public Photo getRandomPhoto() {
-        String fileID = jedis.srandmember(PHOTOS_SET_NAME);
+        long len = jedis.llen(PHOTOS_LST_NAME);
+        long r_idx = r.nextLong(len);
+        String fileID = jedis.lindex(PHOTOS_LST_NAME, r_idx);
         String caption = jedis.get(fileID);
+
         return new Photo(fileID, caption);
     }
 
     public void uploadPhoto(String fileID, String caption) {
-        jedis.sadd(PHOTOS_SET_NAME, fileID);
+        jedis.lpush(PHOTOS_LST_NAME, fileID);
         jedis.set(fileID, caption);
     }
 
