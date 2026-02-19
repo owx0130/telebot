@@ -9,4 +9,5 @@ FROM eclipse-temurin:25
 WORKDIR /app
 
 COPY --from=builder /app/target/telebot-1.0.jar telebot.jar
+EXPOSE 10000
 CMD ["java", "-jar", "telebot.jar"]
