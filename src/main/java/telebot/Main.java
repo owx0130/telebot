@@ -1,28 +1,17 @@
 package telebot;
 
-import com.sun.net.httpserver.HttpServer;
+import io.github.cdimascio.dotenv.Dotenv;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.telegram.telegrambots.longpolling.TelegramBotsLongPollingApplication;
-
-import java.net.InetSocketAddress;
 
 public class Main {
     private static final Logger logger = LoggerFactory.getLogger(Main.class);
 
     static void main() {
-        String botToken = System.getenv("BOT_TOKEN");
-        String redisUrl = System.getenv("REDIS_URL");
-        int port = Integer.parseInt(System.getenv("PORT"));
-
-        try {
-            HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
-            server.start();
-
-            System.out.println("Dummy server running on port " + port);
-        } catch (Exception e) {
-            logger.error("Dummy server failed to start!");
-        }
+        Dotenv dotenv = Dotenv.load();
+        String botToken = dotenv.get("BOT_TOKEN");
+        String redisUrl = dotenv.get("REDIS_URL");
 
         try (TelegramBotsLongPollingApplication botsApplication = new TelegramBotsLongPollingApplication()) {
             botsApplication.registerBot(botToken, new Bot(botToken, redisUrl));

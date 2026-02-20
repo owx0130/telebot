@@ -63,7 +63,7 @@ public class Database {
     }
 
     public void uploadPhoto(String fileID, String caption) {
-        jedis.lpush(PHOTOS_LST_NAME, fileID);
+        jedis.rpush(PHOTOS_LST_NAME, fileID);
         jedis.set(fileID, caption);
     }
 
