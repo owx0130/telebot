@@ -26,190 +26,105 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
     public Bot(String botToken, String redisUrl) {
         telegramClient = new OkHttpTelegramClient(botToken);
         db = new Database(redisUrl);
-        List<BotCommand> commands = List.of(
-                new BotCommand("random_photo", "Display a random photo"),
-                new BotCommand("upload_photo", "Upload a new photo")
-        );
         try {
-            telegramClient.execute(
-                    new SetMyCommands(commands, new BotCommandScopeDefault(), null)
-            );
+            telegramClient.execute(new SetMyCommands(
+                    List.of(
+                            new BotCommand("random_photo", "Display a random photo"),
+                            new BotCommand("upload_photo", "Upload a new photo")
+                    ),
+                    new BotCommandScopeDefault(),
+                    null
+            ));
         } catch (TelegramApiException e) {
             logger.error("Failed to set bot commands", e);
         }
     }
 
+    @Override
     public void consume(Update update) {
         if (!update.hasMessage()) return;
 
         Message message = update.getMessage();
-        long chat_id = message.getChatId();
+        long chatId = message.getChatId();
 
-        // Add user to database. If user already exists, do nothing
-        db.addUser(chat_id);
-        UserState state = db.getUserState(chat_id);
+        db.addUser(chatId);
+        UserState state = db.getUserState(chatId);
 
-        // Handle non-default user states, otherwise handle commands/text and photos
-        if (!state.equals(UserState.DEFAULT)) {
-            handleStates(chat_id, state, message);
+        if (state == UserState.AWAITING_PHOTO) {
+            handleAwaitingPhotoState(chatId, message);
+        } else if (state == UserState.AWAITING_CAPTION) {
+            handleAwaitingCaptionState(chatId, message);
         } else if (message.hasText()) {
-            handleText(chat_id, message.getText());
+            handleText(chatId, message.getText());
         } else if (message.hasPhoto()) {
-            handlePhoto(chat_id);
+            handlePhoto(chatId);
         }
     }
 
-    private void handleStates(long chat_id, UserState state, Message message) {
-        if (state.equals(UserState.AWAITING_PHOTO)) {
-            handleAwaitingPhotoStatus(chat_id, message);
-        } else if (state.equals(UserState.AWAITING_CAPTION)) {
-            handleAwaitingCaptionStatus(chat_id, message);
-        }
-    }
-
-    private void handleAwaitingPhotoStatus(long chat_id, Message message) {
+    private void handleAwaitingPhotoState(long chatId, Message message) {
         if (message.hasPhoto()) {
             String fileID = message.getPhoto().getLast().getFileId();
-            String caption = message.getCaption();
-
-            // Ignore captions for multiple photos, otherwise for single photo ask user to input captions if they were left empty initially
-            if (Boolean.parseBoolean(message.getMediaGroupId())) {
-                SendMessage reply = SendMessage.builder()
-                        .chatId(chat_id)
-                        .text("Photo has been uploaded!")
-                        .build();
-                try {
-                    telegramClient.execute(reply);
-                    db.setUserState(chat_id, UserState.DEFAULT);
-                    db.uploadPhoto(fileID, caption);
-                } catch (TelegramApiException e) {
-                    logger.error("Failed to inform user of successful photo upload", e);
-                }
-            } else if (!message.hasCaption()) {
-                SendMessage reply = SendMessage.builder()
-                        .chatId(chat_id)
-                        .text("Do you want to input a caption? If so just send it in the next message! Otherwise just click /skip.")
-                        .build();
-                try {
-                    telegramClient.execute(reply);
-                    db.setUserState(chat_id, UserState.AWAITING_CAPTION);
-                    db.setUserStoredPhotoID(chat_id, message.getPhoto().getLast().getFileId());
-                } catch (TelegramApiException e) {
-                    logger.error("Failed to ask for user's caption", e);
-                }
+            if (message.hasCaption()) {
+                db.uploadPhoto(fileID, message.getCaption());
+                db.setUserState(chatId, UserState.DEFAULT);
+                sendText(chatId, "Photo has been uploaded!");
             } else {
-                SendMessage reply = SendMessage.builder()
-                        .chatId(chat_id)
-                        .text("Photo has been uploaded!")
-                        .build();
+                db.setUserStoredPhotoID(chatId, fileID);
+                db.setUserState(chatId, UserState.AWAITING_CAPTION);
+                sendText(chatId, "Do you want to input a caption? If so just send it in the next message! Otherwise just click /skip.");
+            }
+        } else if (message.hasText() && message.getText().equals("/cancel")) {
+            db.setUserState(chatId, UserState.DEFAULT);
+            sendText(chatId, "Upload photo operation cancelled!");
+        } else {
+            sendText(chatId, "Please send a photo to be uploaded! Or click /cancel to cancel operation.");
+        }
+    }
+
+    private void handleAwaitingCaptionState(long chatId, Message message) {
+        if (message.hasText()) {
+            String fileID = db.getUserStoredPhotoID(chatId);
+            String caption = message.getText().equals("/skip") ? "" : message.getText();
+            db.uploadPhoto(fileID, caption);
+            db.setUserStoredPhotoID(chatId, "");
+            db.setUserState(chatId, UserState.DEFAULT);
+            sendText(chatId, "Photo has been uploaded!");
+        } else {
+            sendText(chatId, "Please write a caption! Or click /skip to skip adding a caption.");
+        }
+    }
+
+    private void handleText(long chatId, String text) {
+        switch (text) {
+            case "/random_photo" -> {
+                Photo photo = db.getRandomPhoto();
                 try {
-                    telegramClient.execute(reply);
-                    db.setUserState(chat_id, UserState.DEFAULT);
-                    db.uploadPhoto(fileID, caption);
+                    telegramClient.execute(SendPhoto.builder()
+                            .chatId(chatId)
+                            .photo(new InputFile(photo.fileID()))
+                            .caption(photo.caption())
+                            .build());
                 } catch (TelegramApiException e) {
-                    logger.error("Failed to inform user of successful photo upload", e);
+                    logger.error("Failed to send random photo", e);
                 }
             }
-        } else if (message.getText().equals("/cancel")) {
-            SendMessage reply = SendMessage.builder()
-                    .chatId(chat_id)
-                    .text("Upload photo operation cancelled!")
-                    .build();
-            try {
-                telegramClient.execute(reply);
-                db.setUserState(chat_id, UserState.DEFAULT);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to inform user that the upload photo operation was cancelled", e);
+            case "/upload_photo" -> {
+                db.setUserState(chatId, UserState.AWAITING_PHOTO);
+                sendText(chatId, "Got it! Please send a photo (optionally with a caption) in your next message! If you want to cancel, click /cancel.");
             }
-        } else {
-            SendMessage reply = SendMessage.builder()
-                    .chatId(chat_id)
-                    .text("Please send a photo to be uploaded! Or click /cancel to cancel operation.")
-                    .build();
-            try {
-                telegramClient.execute(reply);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to inform user to upload a photo while in AWAITING_PHOTO state", e);
-            }
+            default -> sendText(chatId, "Unknown command, but i love yu lin li");
         }
     }
 
-    private void handleAwaitingCaptionStatus(long chat_id, Message message) {
-        if (message.hasText()) {
-            String fileID = db.getUserStoredPhotoID(chat_id);
-            String caption = message.getText().equals("/skip") ? "" : message.getText();
-
-            SendMessage reply = SendMessage.builder()
-                    .chatId(chat_id)
-                    .text("Photo has been uploaded!")
-                    .build();
-            try {
-                telegramClient.execute(reply);
-                db.setUserState(chat_id, UserState.DEFAULT);
-                db.setUserStoredPhotoID(chat_id, "");
-                db.uploadPhoto(fileID, caption);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to inform user of successful photo upload", e);
-            }
-        } else {
-            SendMessage reply = SendMessage.builder()
-                    .chatId(chat_id)
-                    .text("Please write a caption! Or click /skip to skip adding a caption.")
-                    .build();
-            try {
-                telegramClient.execute(reply);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to inform user to write a caption while in AWAITING_CAPTION state", e);
-            }
-        }
+    private void handlePhoto(long chatId) {
+        sendText(chatId, "If you want to upload a photo, please click /upload_photo first!");
     }
 
-    private void handleText(long chat_id, String text) {
-        if (text.equals("/random_photo")) {
-            Database.Photo photo = db.getRandomPhoto();
-            SendPhoto reply = SendPhoto.builder()
-                    .chatId(chat_id)
-                    .photo(new InputFile(photo.fileID()))
-                    .caption(photo.caption())
-                    .build();
-            try {
-                telegramClient.execute(reply);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to send a random photo", e);
-            }
-        } else if (text.equals("/upload_photo")) {
-            SendMessage reply = SendMessage.builder()
-                    .chatId(chat_id)
-                    .text("Got it! Please send a photo (optionally with captions) in your next message! If you want to cancel the photo upload, click /cancel.")
-                    .build();
-            try {
-                telegramClient.execute(reply);
-                db.setUserState(chat_id, UserState.AWAITING_PHOTO);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to inform user to upload photo", e);
-            }
-        } else {
-            SendMessage reply = SendMessage.builder()
-                    .chatId(chat_id)
-                    .text("Unknown command, but i love yu lin li")
-                    .build();
-            try {
-                telegramClient.execute(reply);
-            } catch (TelegramApiException e) {
-                logger.error("Failed to send default reply", e);
-            }
-        }
-    }
-
-    private void handlePhoto(long chat_id) {
-        SendMessage reply = SendMessage.builder()
-                .chatId(chat_id)
-                .text("If you want to upload a photo, please click /upload_photo first!")
-                .build();
+    private void sendText(long chatId, String text) {
         try {
-            telegramClient.execute(reply);
+            telegramClient.execute(SendMessage.builder().chatId(chatId).text(text).build());
         } catch (TelegramApiException e) {
-            logger.error("Failed to send default reply", e);
+            logger.error("Failed to send message to chat {}", chatId, e);
         }
     }
 }

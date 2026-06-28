@@ -1,8 +1,17 @@
 {
   "permissions": {
     "allow": [
+      "Edit(.claude)",
+      "Edit(src/)",
+      "Edit(CLAUDE.md)",
+      "Write(.claude)",
+      "Write(src/)",
+      "Write(CLAUDE.md)",
+      "Read",
       "Bash(git *)",
-      "Bash(mvn *)"
+      "Bash(\"$MVN\" *)",
+      "mcp__github__*",
+      "mcp__code-review-graph__*"
     ]
   },
   "hooks": {

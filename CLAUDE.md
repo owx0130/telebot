@@ -14,41 +14,74 @@ A Telegram bot that manages a shared photo gallery. Users can upload photos (wit
 
 | File | Purpose |
 |------|---------|
-| `src/main/java/telebot/Main.java` | Entry point; loads `.env`, registers the bot |
-| `src/main/java/telebot/Bot.java` | Update handler; routes messages to state/command handlers |
-| `src/main/java/telebot/Database.java` | All Redis I/O — user records, photo list, captions |
-| `src/main/java/telebot/UserState.java` | Enum for per-user conversation state |
+| `src/main/java/telebot/Main.java` | Entry point; loads `.env`, registers bot via `TelegramBotsLongPollingApplication` |
+| `src/main/java/telebot/Bot.java` | Implements `LongPollingSingleThreadUpdateConsumer`; all message routing and reply logic |
+| `src/main/java/telebot/Database.java` | All Redis I/O — user records, photo list, captions; exposes `Photo` record |
+| `src/main/java/telebot/UserState.java` | Enum (`DEFAULT`, `AWAITING_PHOTO`, `AWAITING_CAPTION`, `UNKNOWN`) with Redis string converters |
+
+## Bot internal methods (`Bot.java`)
+
+| Method | Role |
+|--------|------|
+| `Bot(botToken, redisUrl)` | Constructor; builds `OkHttpTelegramClient`, `Database`, registers Telegram commands via `SetMyCommands` |
+| `consume(Update)` | Main entry point; auto-registers user, reads state, dispatches to handlers |
+| `handleStates(chat_id, state, message)` | Dispatches to `handleAwaitingPhotoStatus` or `handleAwaitingCaptionStatus` |
+| `handleText(chat_id, text)` | Handles `/random_photo`, `/upload_photo`, unknown commands |
+| `handlePhoto(chat_id)` | DEFAULT-state photo received — prompts user to use `/upload_photo` first |
+| `handleAwaitingPhotoStatus(chat_id, message)` | Handles photo upload: single photo with caption → upload & DEFAULT, single without caption → AWAITING_CAPTION |
+| `handleAwaitingCaptionStatus(chat_id, message)` | Accepts caption text or `/skip` (empty caption), finalises upload |
 
 ## Bot commands
 
 - `/random_photo` — sends a random photo from the Redis list with its caption
-- `/upload_photo` — starts a multi-step upload flow (see state machine below)
+- `/upload_photo` — starts a single-photo upload flow (see state machine below)
+- Photo sent in DEFAULT state — bot replies asking user to use `/upload_photo` first
 
 ## State machine
 
 ```
 DEFAULT
-  └─ /upload_photo ──► AWAITING_PHOTO
-                          ├─ photo with caption ──► upload & DEFAULT
-                          ├─ photo without caption ──► store fileID ──► AWAITING_CAPTION
-                          │                                               ├─ text ──► upload & DEFAULT
-                          │                                               └─ /skip ──► upload (no caption) & DEFAULT
-                          └─ /cancel ──► DEFAULT
+  ├─ /random_photo ──► send random photo & DEFAULT
+  ├─ /upload_photo ──► AWAITING_PHOTO
+  │                       ├─ photo with caption ──► upload & DEFAULT
+  │                       ├─ photo without caption ──► store fileID ──► AWAITING_CAPTION
+  │                       │                                               ├─ text ──► upload with caption & DEFAULT
+  │                       │                                               └─ /skip ──► upload (empty caption) & DEFAULT
+  │                       └─ /cancel ──► DEFAULT
+  └─ photo (no /upload_photo) ──► prompt to use /upload_photo & DEFAULT
 ```
+
+### Notes
+- `UserState.UNKNOWN` is a fallback for unrecognised Redis strings; it is never handled in `handleStates` (silently ignored).
+- Bot commands are registered programmatically in the `Bot` constructor via `SetMyCommands`.
 
 ## Redis schema
 
 - `user_<chat_id>` — hash with fields `state` (string) and `storedPhotoID` (Telegram file ID, temp during upload)
-- `photos` — list of Telegram file IDs (the gallery)
-- `<fileID>` — string key storing the caption for that file
+- `photos` — list of Telegram file IDs (the gallery); new photos appended via `RPUSH`
+- `<fileID>` — string key storing the caption for that file (empty string if no caption)
+
+## Database API
+
+| Method | Redis operation |
+|--------|----------------|
+| `addUser(chat_id)` | `HSET user_<id> state DEFAULT storedPhotoID ""` (only if not exists) |
+| `getUserState(chat_id)` | `HGET user_<id> state` → parsed to `UserState` enum |
+| `setUserState(chat_id, state)` | `HSET user_<id> state <string>` |
+| `getUserStoredPhotoID(chat_id)` | `HGET user_<id> storedPhotoID` |
+| `setUserStoredPhotoID(chat_id, fileID)` | `HSET user_<id> storedPhotoID <fileID>` |
+| `getRandomPhoto()` | `LLEN photos` → random index → `LINDEX` → `GET <fileID>` → `Photo` record |
+| `uploadPhoto(fileID, caption)` | `RPUSH photos <fileID>` + `SET <fileID> <caption>` |
 
 ## Build & run
 
 ```bash
 Use IntelliJ's bundled Maven to build:
-"C:\Program Files\JetBrains\IntelliJ IDEA 2025.3.2\plugins\maven\lib\maven3\bin\mvn.cmd" clean package
+"$MVN" clean package
 java -jar target/telebot-1.0.jar
 ```
+
+**Before building, verify `$MVN` is set:** run `echo $MVN` and confirm it prints a path. If it is empty, the user must add `MVN` to `.claude/settings.local.json` before proceeding.
 
 Requires a `.env` file in the working directory:
 ```
