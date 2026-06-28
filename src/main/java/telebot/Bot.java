@@ -1,43 +1,35 @@
 package telebot;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.telegram.telegrambots.client.okhttp.OkHttpTelegramClient;
 import org.telegram.telegrambots.longpolling.util.LongPollingSingleThreadUpdateConsumer;
-import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
-import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
-import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
-import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Update;
-import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
-import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
 import org.telegram.telegrambots.meta.api.objects.message.Message;
-import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
-import org.telegram.telegrambots.meta.generics.TelegramClient;
+import telebot.handler.PhotoHandler;
+import telebot.handler.WordleHandler;
+import telebot.model.UserState;
+import telebot.storage.RedisConnection;
+import telebot.storage.UserStateStore;
+import telebot.telegram.Messenger;
 
-import java.util.List;
-
+/**
+ * Composition root and update router. Wires the storage, messaging, and feature
+ * handlers together, then dispatches each incoming {@link Update} to the right
+ * handler based on the user's {@link UserState} and message content.
+ */
 public class Bot implements LongPollingSingleThreadUpdateConsumer {
-    private static final Logger logger = LoggerFactory.getLogger(Bot.class);
-
-    private final TelegramClient telegramClient;
-    private final Database db;
+    private final UserStateStore userStates;
+    private final Messenger messenger;
+    private final PhotoHandler photoHandler;
+    private final WordleHandler wordleHandler;
 
     public Bot(String botToken, String redisUrl) {
-        telegramClient = new OkHttpTelegramClient(botToken);
-        db = new Database(redisUrl);
-        try {
-            telegramClient.execute(new SetMyCommands(
-                    List.of(
-                            new BotCommand("random_photo", "Display a random photo"),
-                            new BotCommand("upload_photo", "Upload a new photo")
-                    ),
-                    new BotCommandScopeDefault(),
-                    null
-            ));
-        } catch (TelegramApiException e) {
-            logger.error("Failed to set bot commands", e);
-        }
+        RedisConnection redis = new RedisConnection(redisUrl);
+        this.userStates = new UserStateStore(redis);
+
+        this.messenger = new Messenger(botToken);
+        messenger.registerCommands();
+
+        this.photoHandler = new PhotoHandler(messenger, userStates, redis);
+        this.wordleHandler = new WordleHandler(messenger, userStates, redis);
     }
 
     @Override
@@ -47,84 +39,29 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
         Message message = update.getMessage();
         long chatId = message.getChatId();
 
-        db.addUser(chatId);
-        UserState state = db.getUserState(chatId);
+        userStates.addUser(chatId);
+        UserState state = userStates.getUserState(chatId);
 
         if (state == UserState.AWAITING_PHOTO) {
-            handleAwaitingPhotoState(chatId, message);
+            photoHandler.handleAwaitingPhoto(chatId, message);
         } else if (state == UserState.AWAITING_CAPTION) {
-            handleAwaitingCaptionState(chatId, message);
+            photoHandler.handleAwaitingCaption(chatId, message);
+        } else if (state == UserState.AWAITING_WORDLE_GUESS) {
+            wordleHandler.handleGuess(chatId, message);
         } else if (message.hasText()) {
-            handleText(chatId, message.getText());
+            handleCommand(chatId, message.getText());
         } else if (message.hasPhoto()) {
-            handlePhoto(chatId);
+            photoHandler.handleUnexpectedPhoto(chatId);
         }
     }
 
-    private void handleAwaitingPhotoState(long chatId, Message message) {
-        if (message.hasPhoto()) {
-            String fileID = message.getPhoto().getLast().getFileId();
-            if (message.hasCaption()) {
-                db.uploadPhoto(fileID, message.getCaption());
-                db.setUserState(chatId, UserState.DEFAULT);
-                sendText(chatId, "Photo has been uploaded!");
-            } else {
-                db.setUserStoredPhotoID(chatId, fileID);
-                db.setUserState(chatId, UserState.AWAITING_CAPTION);
-                sendText(chatId, "Do you want to input a caption? If so just send it in the next message! Otherwise just click /skip.");
-            }
-        } else if (message.hasText() && message.getText().equals("/cancel")) {
-            db.setUserState(chatId, UserState.DEFAULT);
-            sendText(chatId, "Upload photo operation cancelled!");
-        } else {
-            sendText(chatId, "Please send a photo to be uploaded! Or click /cancel to cancel operation.");
-        }
-    }
-
-    private void handleAwaitingCaptionState(long chatId, Message message) {
-        if (message.hasText()) {
-            String fileID = db.getUserStoredPhotoID(chatId);
-            String caption = message.getText().equals("/skip") ? "" : message.getText();
-            db.uploadPhoto(fileID, caption);
-            db.setUserStoredPhotoID(chatId, "");
-            db.setUserState(chatId, UserState.DEFAULT);
-            sendText(chatId, "Photo has been uploaded!");
-        } else {
-            sendText(chatId, "Please write a caption! Or click /skip to skip adding a caption.");
-        }
-    }
-
-    private void handleText(long chatId, String text) {
+    private void handleCommand(long chatId, String text) {
         switch (text) {
-            case "/random_photo" -> {
-                Photo photo = db.getRandomPhoto();
-                try {
-                    telegramClient.execute(SendPhoto.builder()
-                            .chatId(chatId)
-                            .photo(new InputFile(photo.fileID()))
-                            .caption(photo.caption())
-                            .build());
-                } catch (TelegramApiException e) {
-                    logger.error("Failed to send random photo", e);
-                }
-            }
-            case "/upload_photo" -> {
-                db.setUserState(chatId, UserState.AWAITING_PHOTO);
-                sendText(chatId, "Got it! Please send a photo (optionally with a caption) in your next message! If you want to cancel, click /cancel.");
-            }
-            default -> sendText(chatId, "Unknown command, but i love yu lin li");
-        }
-    }
-
-    private void handlePhoto(long chatId) {
-        sendText(chatId, "If you want to upload a photo, please click /upload_photo first!");
-    }
-
-    private void sendText(long chatId, String text) {
-        try {
-            telegramClient.execute(SendMessage.builder().chatId(chatId).text(text).build());
-        } catch (TelegramApiException e) {
-            logger.error("Failed to send message to chat {}", chatId, e);
+            case "/random_photo" -> photoHandler.sendRandomPhoto(chatId);
+            case "/upload_photo" -> photoHandler.startUpload(chatId);
+            case "/wordle" -> wordleHandler.start(chatId, true);
+            case "/wordle_easy" -> wordleHandler.start(chatId, false);
+            default -> messenger.sendText(chatId, "Unknown command, but i love yu lin li");
         }
     }
 }

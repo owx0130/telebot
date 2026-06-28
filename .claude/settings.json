@@ -10,6 +10,8 @@
       "Read",
       "Bash(git *)",
       "Bash(\"$MVN\" *)",
+      "Bash(ls *)",
+      "Bash(cd *)",
       "mcp__github__*",
       "mcp__code-review-graph__*"
     ]
