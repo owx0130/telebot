@@ -21,7 +21,7 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
     private final PhotoHandler photoHandler;
     private final WordleHandler wordleHandler;
 
-    public Bot(String botToken, String redisUrl) {
+    public Bot(String botToken, String redisUrl, String webAppUrl) {
         RedisConnection redis = new RedisConnection(redisUrl);
         this.userStates = new UserStateStore(redis);
 
@@ -29,7 +29,7 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
         messenger.registerCommands();
 
         this.photoHandler = new PhotoHandler(messenger, userStates, redis);
-        this.wordleHandler = new WordleHandler(messenger, userStates, redis);
+        this.wordleHandler = new WordleHandler(messenger, webAppUrl);
     }
 
     @Override
@@ -46,8 +46,6 @@ public class Bot implements LongPollingSingleThreadUpdateConsumer {
             photoHandler.handleAwaitingPhoto(chatId, message);
         } else if (state == UserState.AWAITING_CAPTION) {
             photoHandler.handleAwaitingCaption(chatId, message);
-        } else if (state == UserState.AWAITING_WORDLE_GUESS) {
-            wordleHandler.handleGuess(chatId, message);
         } else if (message.hasText()) {
             handleCommand(chatId, message.getText());
         } else if (message.hasPhoto()) {

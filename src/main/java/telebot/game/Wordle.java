@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Self-contained Wordle game logic: word-list validation, fetching the daily NYT
@@ -33,6 +32,9 @@ public class Wordle {
     private static final String NYT_URL_TEMPLATE = "https://www.nytimes.com/svc/wordle/v2/%s.json";
     // Which calendar date's puzzle to fetch — resolved in GMT+8 (Singapore, no DST).
     private static final ZoneId PUZZLE_ZONE = ZoneId.of("Asia/Singapore");
+    // Testing override: set to an ISO date (e.g. "2025-01-15") to always fetch that
+    // day's puzzle instead of today's. Leave null for normal (current-date) behaviour.
+    private static final String TEST_DATE_OVERRIDE = "2026-06-29";
     private static final Pattern SOLUTION_PATTERN = Pattern.compile("\"solution\"\\s*:\\s*\"([a-z]+)\"");
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -82,7 +84,9 @@ public class Wordle {
      * Returns the lowercase answer, or {@code null} on any failure.
      */
     public static String fetchSolution() {
-        String date = LocalDate.now(PUZZLE_ZONE).format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String date = TEST_DATE_OVERRIDE != null
+                ? TEST_DATE_OVERRIDE
+                : LocalDate.now(PUZZLE_ZONE).format(DateTimeFormatter.ISO_LOCAL_DATE);
         String url = String.format(NYT_URL_TEMPLATE, date);
         try {
             HttpClient client = HttpClient.newHttpClient();
@@ -173,28 +177,5 @@ public class Wordle {
             }
         }
         return null;
-    }
-
-    /** Renders the board as an emoji-square text grid with the guessed letters beneath. */
-    public static String renderBoard(List<String> guesses, String answer, boolean hardMode) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("WORDLE — ").append(hardMode ? "Hard Mode" : "Easy").append('\n');
-        for (String guess : guesses) {
-            int[] eval = evaluate(guess, answer);
-            sb.append('\n');
-            for (int state : eval) {
-                sb.append(switch (state) {
-                    case GREEN -> "🟩";
-                    case YELLOW -> "🟨";
-                    default -> "⬛";
-                });
-            }
-            sb.append('\n');
-            sb.append(guess.toUpperCase().chars()
-                    .mapToObj(c -> String.valueOf((char) c))
-                    .collect(Collectors.joining("  ")));
-            sb.append('\n');
-        }
-        return sb.toString();
     }
 }

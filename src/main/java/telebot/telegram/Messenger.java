@@ -9,6 +9,10 @@ import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardRow;
+import org.telegram.telegrambots.meta.api.objects.webapp.WebAppInfo;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.meta.generics.TelegramClient;
 
@@ -51,6 +55,29 @@ public class Messenger {
             telegramClient.execute(SendMessage.builder().chatId(chatId).text(text).build());
         } catch (TelegramApiException e) {
             logger.error("Failed to send message to chat {}", chatId, e);
+        }
+    }
+
+    /**
+     * Sends a message with a single inline button that opens a Telegram Mini App (Web App).
+     * Web-app inline buttons are permitted in private chats, which is this bot's use case.
+     */
+    public void sendWebAppButton(long chatId, String text, String buttonText, String url) {
+        InlineKeyboardButton button = InlineKeyboardButton.builder()
+                .text(buttonText)
+                .webApp(WebAppInfo.builder().url(url).build())
+                .build();
+        InlineKeyboardMarkup markup = InlineKeyboardMarkup.builder()
+                .keyboardRow(new InlineKeyboardRow(button))
+                .build();
+        try {
+            telegramClient.execute(SendMessage.builder()
+                    .chatId(chatId)
+                    .text(text)
+                    .replyMarkup(markup)
+                    .build());
+        } catch (TelegramApiException e) {
+            logger.error("Failed to send web app button to chat {}", chatId, e);
         }
     }
 
