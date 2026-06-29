@@ -1,16 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Edit(.claude)",
-      "Edit(src/)",
-      "Edit(CLAUDE.md)",
-      "Write(.claude)",
-      "Write(src/)",
-      "Write(CLAUDE.md)",
+      "Edit",
+      "Write",
       "Read",
       "Bash(git *)",
       "Bash(ls *)",
       "Bash(cd *)",
+      "Bash(echo *)",
+      "Bash(java *)",
       "mcp__github__*",
       "mcp__code-review-graph__*"
     ]

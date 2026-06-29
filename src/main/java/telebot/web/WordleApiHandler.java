@@ -63,6 +63,8 @@ public class WordleApiHandler implements HttpHandler {
                 handleStart(exchange, userId, params);
             } else if (path.endsWith("/guess")) {
                 handleGuess(exchange, userId, params);
+            } else if (path.endsWith("/end")) {
+                handleEnd(exchange, userId);
             } else {
                 send(exchange, 404, errorJson("Not found"));
             }
@@ -80,25 +82,16 @@ public class WordleApiHandler implements HttpHandler {
             return;
         }
 
-        String stored = sessions.getWordleAnswer(userId);
-        List<String> guesses;
-        String answer;
-        boolean hardMode;
-        if (today.equals(stored)) {
-            // Resume today's in-progress (or completed) game; keep its original mode.
-            answer = stored;
-            hardMode = sessions.isWordleHardMode(userId);
-            guesses = sessions.getWordleGuesses(userId);
-        } else {
-            answer = today;
-            hardMode = requestedHard;
-            guesses = new ArrayList<>();
-            sessions.setWordleAnswer(userId, answer);
-            sessions.setWordleGuesses(userId, guesses);
-            sessions.setWordleHardMode(userId, hardMode);
-        }
+        // Always seed a fresh game on open rather than resuming the stored session. Mobile
+        // Telegram doesn't reliably fire the page-unload beacon that clears the session on close,
+        // so resetting here guarantees every reopen starts clean regardless of how the app was
+        // closed. (The close-time /end call remains as best-effort immediate cleanup.)
+        List<String> guesses = new ArrayList<>();
+        sessions.setWordleAnswer(userId, today);
+        sessions.setWordleGuesses(userId, guesses);
+        sessions.setWordleHardMode(userId, requestedHard);
 
-        send(exchange, 200, boardJson(guesses, answer, hardMode, isWon(guesses, answer)));
+        send(exchange, 200, boardJson(guesses, today, requestedHard, false));
     }
 
     private void handleGuess(HttpExchange exchange, long userId, Map<String, String> params) throws IOException {
@@ -137,6 +130,15 @@ public class WordleApiHandler implements HttpHandler {
         guesses.add(guess);
         sessions.setWordleGuesses(userId, guesses);
         send(exchange, 200, boardJson(guesses, answer, hardMode, guess.equals(answer)));
+    }
+
+    /**
+     * Destroys the user's session when they close the Mini App. Called best-effort from the page's
+     * unload hook (typically via {@code navigator.sendBeacon}), so it just clears state and acks.
+     */
+    private void handleEnd(HttpExchange exchange, long userId) throws IOException {
+        sessions.clearWordleSession(userId);
+        send(exchange, 200, "{\"ok\":true}");
     }
 
     private static boolean isWon(List<String> guesses, String answer) {
@@ -180,6 +182,7 @@ public class WordleApiHandler implements HttpHandler {
         sb.append("{\"ok\":true")
                 .append(",\"hardMode\":").append(hardMode)
                 .append(",\"wordLength\":").append(Wordle.WORD_LENGTH)
+                .append(",\"date\":\"").append(Wordle.puzzleDate()).append('"')
                 .append(",\"won\":").append(won)
                 .append(",\"guesses\":").append(rows)
                 .append(",\"keyboard\":").append(kb);

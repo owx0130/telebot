@@ -47,6 +47,15 @@ body {
     vertical-align: middle;
 }
 
+#puzzle-date {
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #9a9a9c;
+    padding: 0.35rem 0 0.1rem;
+}
+
 #message {
     min-height: 1.6rem;
     padding: 0.4rem 0.8rem;
@@ -102,6 +111,8 @@ body {
     width: 100%;
     max-width: 500px;
     padding: 0.4rem 0.4rem max(0.6rem, env(safe-area-inset-bottom));
+    /* Lift the keyboard off the bottom edge so it sits higher on screen. */
+    margin-bottom: 15vh;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -129,6 +140,8 @@ body {
 }
 
 .key.wide { flex: 1.5; font-size: 0.75rem; }
+/* Backspace shows a glyph, not a word, so let the symbol grow to fill the key. */
+.key.backspace { font-size: 1.6rem; }
 .key.green  { background: var(--green); }
 .key.yellow { background: var(--yellow); }
 .key.absent { background: var(--absent); }

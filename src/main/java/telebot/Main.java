@@ -15,7 +15,6 @@ public class Main {
         Dotenv dotenv = Dotenv.load();
         String botToken = dotenv.get("BOT_TOKEN");
         String redisUrl = dotenv.get("REDIS_URL");
-        String webAppUrl = dotenv.get("WEBAPP_URL");
         int webPort = parsePort(dotenv.get("WEB_PORT"));
         boolean devBypassAuth = "true".equalsIgnoreCase(dotenv.get("WEBAPP_DEV_AUTH_BYPASS"));
         String ngrokAuthtoken = dotenv.get("NGROK_AUTHTOKEN");
@@ -24,9 +23,9 @@ public class Main {
             WebServer webServer = new WebServer(webPort, botToken, redisUrl, devBypassAuth, ngrokAuthtoken);
             webServer.start();
 
-            // Prefer the live ngrok HTTPS URL for the Mini App button; fall back to WEBAPP_URL.
+            // Prefer the live ngrok HTTPS URL for the Mini App button; fall back to the local server URL.
             String publicUrl = webServer.getPublicUrl();
-            String effectiveWebAppUrl = (publicUrl != null) ? publicUrl : webAppUrl;
+            String effectiveWebAppUrl = (publicUrl != null) ? publicUrl : "http://localhost:" + webPort;
             logger.info("Mini App button URL: {}", effectiveWebAppUrl);
 
             botsApplication.registerBot(botToken, new Bot(botToken, redisUrl, effectiveWebAppUrl));

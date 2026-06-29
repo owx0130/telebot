@@ -34,7 +34,7 @@ public class Wordle {
     private static final ZoneId PUZZLE_ZONE = ZoneId.of("Asia/Singapore");
     // Testing override: set to an ISO date (e.g. "2025-01-15") to always fetch that
     // day's puzzle instead of today's. Leave null for normal (current-date) behaviour.
-    private static final String TEST_DATE_OVERRIDE = "2026-06-29";
+    private static final String TEST_DATE_OVERRIDE = null;
     private static final Pattern SOLUTION_PATTERN = Pattern.compile("\"solution\"\\s*:\\s*\"([a-z]+)\"");
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -80,13 +80,21 @@ public class Wordle {
     }
 
     /**
+     * The calendar date (ISO {@code yyyy-MM-dd}) of the puzzle currently in play — resolved in
+     * GMT+8, or the test override when set. This is the same date {@link #fetchSolution()} fetches.
+     */
+    public static String puzzleDate() {
+        return TEST_DATE_OVERRIDE != null
+                ? TEST_DATE_OVERRIDE
+                : LocalDate.now(PUZZLE_ZONE).format(DateTimeFormatter.ISO_LOCAL_DATE);
+    }
+
+    /**
      * Fetches today's Wordle solution from the NYT endpoint (date resolved in GMT+8).
      * Returns the lowercase answer, or {@code null} on any failure.
      */
     public static String fetchSolution() {
-        String date = TEST_DATE_OVERRIDE != null
-                ? TEST_DATE_OVERRIDE
-                : LocalDate.now(PUZZLE_ZONE).format(DateTimeFormatter.ISO_LOCAL_DATE);
+        String date = puzzleDate();
         String url = String.format(NYT_URL_TEMPLATE, date);
         try {
             HttpClient client = HttpClient.newHttpClient();

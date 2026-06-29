@@ -10,7 +10,7 @@ A Telegram bot with two features: a shared photo gallery (upload photos with opt
 - **Storage**: Redis (via Jedis 7.2.1) — user session state, the photo gallery, and in-progress Wordle sessions all live in Redis
 - **Web/HTTP**: JDK `com.sun.net.httpserver.HttpServer` serves the Wordle Mini App page + JSON API; `java.net.http.HttpClient` fetches the Wordle solution from NYT
 - **Logging**: SLF4J + slf4j-simple
-- **Config**: `.env` file loaded via dotenv-java (`BOT_TOKEN`, `REDIS_URL`, `WEBAPP_URL`, optional `WEB_PORT`, `WEBAPP_DEV_AUTH_BYPASS`)
+- **Config**: `.env` file loaded via dotenv-java (`BOT_TOKEN`, `REDIS_URL`, `NGROK_AUTHTOKEN`, optional `WEB_PORT`, `WEBAPP_DEV_AUTH_BYPASS`). The public Mini App URL comes from the ngrok tunnel.
 
 The code is organized into feature/responsibility packages under `telebot`:
 
@@ -48,7 +48,18 @@ Layering: `Bot` wires everything and routes; handlers orchestrate a feature by c
 | `src/main/java/telebot/model/Photo.java` | `record Photo(String fileID, String caption)` |
 | `src/main/resources/wordle-words.txt` | Bundled 5-letter word list used for guess validation |
 
-## Update routing (`Bot.consume`)
+## Bot commands
+
+Registered programmatically in `Messenger.registerCommands` via `SetMyCommands`:
+
+- `/random_photo` — sends a random photo from the gallery with its caption
+- `/upload_photo` — starts a single-photo upload flow (see state machine)
+- `/wordle` — starts a Wordle game in **hard mode**
+- `/wordle_easy` — starts a Wordle game with normal rules
+
+Mid-flow inputs (not in the registered menu): `/cancel` (abort upload or Wordle), `/skip` (upload with empty caption).
+
+## Update routing
 
 `consume(Update)` ignores updates without a message, then for each message: auto-registers the user (`UserStateStore.addUser`), reads `UserState`, and dispatches:
 
@@ -60,17 +71,6 @@ Layering: `Bot` wires everything and routes; handlers orchestrate a feature by c
 `handleCommand` switch: `/random_photo`, `/upload_photo`, `/wordle` (hard), `/wordle_easy` (easy); unknown text falls through to a default reply.
 
 `/wordle` and `/wordle_easy` send a `web_app` button that opens the Mini App; gameplay then happens entirely in the web page against the JSON API (no further bot updates). State-bearing inputs (`/cancel`, captions, `/skip`) are handled inside the respective handler, not in the command switch.
-
-## Bot commands
-
-Registered programmatically in `Messenger.registerCommands` via `SetMyCommands`:
-
-- `/random_photo` — sends a random photo from the gallery with its caption
-- `/upload_photo` — starts a single-photo upload flow (see state machine)
-- `/wordle` — starts a Wordle game in **hard mode**
-- `/wordle_easy` — starts a Wordle game with normal rules
-
-Mid-flow inputs (not in the registered menu): `/cancel` (abort upload or Wordle), `/skip` (upload with empty caption).
 
 ## State machine
 
@@ -89,11 +89,6 @@ DEFAULT
 
 Wordle no longer uses a Telegram `UserState`; once the Mini App opens, the page drives the game directly against the JSON API (see "Wordle Mini App").
 
-### Notes
-- Wordle has **unlimited guesses**; a session ends only when the player guesses the answer.
-- Hard mode enforces that revealed greens stay in place and revealed yellows are reused (`Wordle.hardModeViolation`), checked server-side in the API.
-- `UserState.UNKNOWN` is a fallback for unrecognised Redis strings; it is never dispatched (silently ignored).
-
 ## Redis schema
 
 - `user_<chat_id>` — one hash per user holding both core and Wordle fields:
@@ -104,6 +99,8 @@ Wordle no longer uses a Telegram `UserState`; once the Mini App opens, the page 
   - `wordleHardMode` (string) — `"true"` / `"false"`
 - `photos` — list of Telegram file IDs (the gallery); new photos appended via `RPUSH`
 - `<fileID>` — string key storing the caption for that file (empty string if no caption)
+
+`UserState.UNKNOWN` is a fallback for unrecognised `state` strings; it is never dispatched (silently ignored).
 
 ## Storage API
 
@@ -133,7 +130,15 @@ Wordle no longer uses a Telegram `UserState`; once the Mini App opens, the page 
 | `getRandomPhoto()` | `LLEN photos` → random index → `LINDEX` → `GET <fileID>` → `Photo` |
 | `uploadPhoto(fileID, caption)` | `RPUSH photos <fileID>` + `SET <fileID> <caption>` |
 
-## Wordle game logic (`telebot.game.Wordle`)
+## Wordle Mini App
+
+The bot's `/wordle*` commands send a `web_app` button (`Messenger.sendWebAppButton`) pointing at the ngrok tunnel's public URL — or `http://localhost:<WEB_PORT>` when no tunnel is active — (with `?hard=true` for hard mode). Tapping it opens the hosted page inside Telegram; the page (`index.html`/`style.css`/`app.js`) renders the board and a QWERTY keyboard, graying each guessed letter to its best green > yellow > gray state — the NYT effect.
+
+The page calls the JSON API served by the **same** embedded `WebServer` (single origin → no CORS). The word list never leaves the server; the answer is returned only once the player has won.
+
+Wordle has **unlimited guesses**; a session ends only when the player guesses the answer. Hard mode enforces that revealed greens stay in place and revealed yellows are reused (`Wordle.hardModeViolation`), checked server-side in the API.
+
+### Game logic
 
 Pure, Telegram-agnostic. Constants: `WORD_LENGTH = 5`, tile states `GREEN = 2` / `YELLOW = 1` / 0 (gray).
 
@@ -142,26 +147,24 @@ Pure, Telegram-agnostic. Constants: `WORD_LENGTH = 5`, tile states `GREEN = 2` /
 | `Wordle()` / `loadWordList()` | Loads `/wordle-words.txt` (5-letter words) into an in-memory set |
 | `isValidWord(guess)` | Membership check against the word list |
 | `fetchSolution()` (static) | GETs `nytimes.com/svc/wordle/v2/<date>.json` (date resolved in `Asia/Singapore`), regex-extracts `solution`; returns `null` on any failure |
+| `puzzleDate()` (static) | The puzzle's calendar date (ISO `yyyy-MM-dd`, GMT+8) — the same date `fetchSolution()` fetches; surfaced to the Mini App UI |
 | `evaluate(guess, answer)` (static) | Standard two-pass green/yellow/gray scoring → `int[]` |
 | `hardModeViolation(priorGuesses, answer, guess)` (static) | Returns a human-readable reason a guess breaks hard mode, or `null` if allowed |
 
-## Wordle Mini App (`telebot.web` + `src/main/resources/web`)
-
-The bot's `/wordle*` commands send a `web_app` button (`Messenger.sendWebAppButton`) pointing at `WEBAPP_URL` (with `?hard=true` for hard mode). Tapping it opens the hosted page inside Telegram; the page (`index.html`/`style.css`/`app.js`) renders the board and a QWERTY keyboard, graying each guessed letter to its best green > yellow > gray state — the NYT effect.
-
-The page calls the JSON API served by the **same** embedded `WebServer` (single origin → no CORS). The word list never leaves the server; the answer is returned only once the player has won.
+### API endpoints
 
 | Endpoint (POST) | Params | Returns |
 |-----------------|--------|---------|
-| `/api/wordle/start` | `initData`, `hardMode` | Resumes today's session if `wordleAnswer` matches `Wordle.fetchSolution()`, else seeds a new one. Board (`guesses[]` with per-tile `eval`), aggregated `keyboard` map, `hardMode`, `won`. |
+| `/api/wordle/start` | `initData`, `hardMode` | Always seeds a fresh game for today (overwriting any stored session), so reopening the Mini App never resumes stale guesses. Board (`guesses[]` with per-tile `eval`), aggregated `keyboard` map, `hardMode`, `date`, `won`. |
 | `/api/wordle/guess` | `initData`, `guess` | Validates length / `isValidWord` / `hardModeViolation`, appends the guess, persists via `WordleSessionStore`. Same board shape; `{ok:false, error}` on a rejected guess; `answer` only when `won`. |
+| `/api/wordle/end` | `initData` | Clears the user's session via `clearWordleSession`. Best-effort cleanup called from the page's unload hook (`navigator.sendBeacon`) when the Mini App closes. |
 
 Auth: `TelegramAuth.authenticate` validates Telegram Mini App `initData` (HMAC-SHA256 of the data-check-string with a `WebAppData`-keyed secret derived from the bot token) and returns the Telegram user id (== `chatId` in a private chat), used as the `WordleSessionStore` key. `WEBAPP_DEV_AUTH_BYPASS=true` skips verification for local curl testing.
 
 ## Build & run
 
 ```bash
-Use IntelliJ's bundled Maven to build:
+Use IntelliJ bundled Maven to build:
 "$MVN" clean package
 java -jar target/telebot-1.0.jar
 ```
@@ -172,12 +175,12 @@ Requires a `.env` file in the working directory:
 ```
 BOT_TOKEN=<telegram bot token>
 REDIS_URL=redis://<host>:<port>
-WEBAPP_URL=https://<public-https-host>      # base URL the Mini App button opens
+NGROK_AUTHTOKEN=<ngrok authtoken>            # opens the public HTTPS tunnel for the Mini App
 WEB_PORT=8080                                # optional, local bind port for the embedded server (default 8080)
 WEBAPP_DEV_AUTH_BYPASS=false                 # optional, set true to skip initData validation for local testing
 ```
 
-Telegram requires Mini App URLs to be **HTTPS**, so the embedded server must sit behind TLS — locally via a tunnel (`cloudflared tunnel --url http://localhost:<WEB_PORT>` or `ngrok`), in production behind a reverse proxy. Set `WEBAPP_URL` to that public HTTPS URL. No BotFather game registration is needed; `web_app` inline buttons just need an HTTPS URL.
+The embedded server binds to `WEB_PORT` (default `8080`). Telegram requires Mini App URLs to be **HTTPS**, so the server is exposed via an ngrok tunnel opened on startup (`NGROK_AUTHTOKEN`); its public HTTPS URL is what the Mini App button opens. If no tunnel is active, the button falls back to `http://localhost:<WEB_PORT>` (only reachable locally). No BotFather game registration is needed; `web_app` inline buttons just need an HTTPS URL.
 
 ## MCP Tools: code-review-graph
 

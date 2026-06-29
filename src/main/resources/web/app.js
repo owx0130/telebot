@@ -14,6 +14,20 @@
     const keyboardEl = document.getElementById("keyboard");
     const messageEl = document.getElementById("message");
     const modeTagEl = document.getElementById("mode-tag");
+    const dateEl = document.getElementById("puzzle-date");
+
+    const MONTHS = ["January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"];
+
+    // Format an ISO yyyy-MM-dd date without constructing a Date (avoids timezone shifting
+    // the displayed day relative to the puzzle's GMT+8 date).
+    function formatDate(iso) {
+        if (!iso) return "";
+        const parts = iso.split("-");
+        if (parts.length !== 3) return iso;
+        const [y, m, d] = parts.map(Number);
+        return MONTHS[m - 1] + " " + d + ", " + y;
+    }
 
     const params = new URLSearchParams(window.location.search);
     const hardModeRequested = params.get("hard") === "true";
@@ -49,6 +63,7 @@
         if (typeof data.hardMode === "boolean") {
             modeTagEl.textContent = data.hardMode ? "HARD" : "";
         }
+        if (data.date) dateEl.textContent = formatDate(data.date);
         guesses = data.guesses || [];
         keyboardState = data.keyboard || {};
         won = !!data.won;
@@ -105,7 +120,7 @@
                     key.addEventListener("click", submitGuess);
                 } else if (ch === "⌫") {
                     key.textContent = "⌫";
-                    key.className = "key wide";
+                    key.className = "key wide backspace";
                     key.addEventListener("click", deleteLetter);
                 } else {
                     key.textContent = ch;
@@ -154,6 +169,30 @@
             busy = false;
         }
     }
+
+    // Destroy the server-side session when the Mini App is closed/torn down. Uses sendBeacon so
+    // the request survives page unload (a normal fetch would be cancelled). Fired on pagehide,
+    // which Telegram triggers when the web view closes.
+    let ended = false;
+    function endSession() {
+        if (ended) return;
+        ended = true;
+        const body = new URLSearchParams();
+        body.set("initData", initData || "");
+        const url = "/api/wordle/end";
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(url, new Blob([body.toString()],
+                { type: "application/x-www-form-urlencoded" }));
+        } else {
+            fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: body.toString(),
+                keepalive: true
+            });
+        }
+    }
+    window.addEventListener("pagehide", endSession);
 
     // Physical keyboard support (desktop Telegram).
     document.addEventListener("keydown", (e) => {
