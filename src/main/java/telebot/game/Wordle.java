@@ -24,8 +24,11 @@ import java.util.regex.Pattern;
 /**
  * Self-contained Wordle game logic: word-list validation, fetching the daily NYT
  * solution, evaluating guesses, hard-mode hint checking, and rendering the board.
+ *
+ * <p>Stateless utility: the word list is loaded once into a static set at class load, so all
+ * members are {@code static} and the class is never instantiated.
  */
-public class Wordle {
+public final class Wordle {
     private static final Logger logger = LoggerFactory.getLogger(Wordle.class);
 
     private static final String WORD_LIST_RESOURCE = "/wordle-words.txt";
@@ -46,10 +49,10 @@ public class Wordle {
 
     public static final int WORD_LENGTH = 5;
 
-    private final Set<String> validWords;
+    private static final Set<String> VALID_WORDS = loadWordList();
 
-    public Wordle() {
-        validWords = loadWordList();
+    private Wordle() {
+        // Static utility; not instantiable.
     }
 
     private static Set<String> loadWordList() {
@@ -75,8 +78,8 @@ public class Wordle {
     }
 
     /** True if the (already lowercased) guess is a known 5-letter word. */
-    public boolean isValidWord(String guess) {
-        return validWords.contains(guess);
+    public static boolean isValidWord(String guess) {
+        return VALID_WORDS.contains(guess);
     }
 
     /**

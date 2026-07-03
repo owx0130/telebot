@@ -7,7 +7,6 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import telebot.game.Wordle;
 import telebot.storage.RedisConnection;
 import telebot.storage.WordleSessionStore;
 
@@ -47,7 +46,7 @@ public class WebServer {
         RedisConnection redis = new RedisConnection(redisUrl);
         WordleSessionStore sessions = new WordleSessionStore(redis);
         TelegramAuth auth = new TelegramAuth(botToken, devBypassAuth);
-        WordleApiHandler api = new WordleApiHandler(auth, sessions, new Wordle());
+        WordleApiHandler api = new WordleApiHandler(auth, sessions);
 
         server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/api/wordle/", api);

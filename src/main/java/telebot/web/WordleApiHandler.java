@@ -35,12 +35,10 @@ public class WordleApiHandler implements HttpHandler {
 
     private final TelegramAuth auth;
     private final WordleSessionStore sessions;
-    private final Wordle wordle;
 
-    public WordleApiHandler(TelegramAuth auth, WordleSessionStore sessions, Wordle wordle) {
+    public WordleApiHandler(TelegramAuth auth, WordleSessionStore sessions) {
         this.auth = auth;
         this.sessions = sessions;
-        this.wordle = wordle;
     }
 
     @Override
@@ -115,7 +113,7 @@ public class WordleApiHandler implements HttpHandler {
             send(exchange, 200, errorJson("Please enter a valid 5-letter word."));
             return;
         }
-        if (!wordle.isValidWord(guess)) {
+        if (!Wordle.isValidWord(guess)) {
             send(exchange, 200, errorJson("\"" + raw + "\" is not in the word list."));
             return;
         }
