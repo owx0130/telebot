@@ -8,12 +8,12 @@ Wordle has **unlimited guesses**; a session ends only when the player guesses th
 
 ## Web server
 
-`WebServer` is the embedded JDK `HttpServer` that hosts the whole Mini App. It's the composition root for the web feature: on construction it builds its **own** `RedisConnection` → `WordleSessionStore`, a `TelegramAuth`, and the `WordleApiHandler`, then registers two HTTP contexts:
+`WebServer` is the embedded JDK `HttpServer` hosting the Mini App and the composition root for the web feature — on construction it builds its **own** `RedisConnection` → `WordleSessionStore`, `TelegramAuth`, and `WordleApiHandler`, then registers two contexts:
 
 - `/` → `StaticHandler`, serving the page assets from the classpath under `/web` (`index.html`/`style.css`/`app.js`), with a `..` path-traversal guard.
 - `/api/wordle/` → `WordleApiHandler`, the JSON API below.
 
-It runs on a **single-threaded executor**, so its non-thread-safe `Jedis` connection is only ever touched by that one thread — independent of the bot's own connection. `start()` boots the server and then opens the ngrok tunnel (`startTunnel()`); tunnel failure is non-fatal (the app keeps serving on localhost). `getPublicUrl()` exposes the tunnel's HTTPS URL for the bot's Mini App button. See [build-and-run.md](build-and-run.md) for the port/tunnel config.
+It runs on a **single-threaded executor**, so its non-thread-safe `Jedis` connection is only ever touched by that thread, independent of the bot's. `start()` boots the server, then opens the ngrok tunnel (`startTunnel()`); tunnel failure is non-fatal (it keeps serving on localhost). Telegram requires Mini App URLs to be **HTTPS**, so `getPublicUrl()` hands the tunnel's public HTTPS URL to the bot's Mini App button, falling back to `http://localhost:<WEB_PORT>` (local-only) when no tunnel is active.
 
 ## Auth
 
@@ -25,12 +25,12 @@ Lives in `Wordle.java` (`telebot.game`). Pure, Telegram-agnostic, and **all-stat
 
 | Member | Role |
 |--------|------|
-| `loadWordList()` (static) | Loads `/wordle-words.txt` (5-letter words) into the static in-memory set at class load |
-| `isValidWord(guess)` (static) | Membership check against the word list |
-| `fetchSolution()` (static) | GETs `nytimes.com/svc/wordle/v2/<date>.json` (date resolved in `Asia/Singapore`), regex-extracts `solution`; returns `null` on any failure |
-| `puzzleDate()` (static) | The puzzle's calendar date (ISO `yyyy-MM-dd`, GMT+8) — the same date `fetchSolution()` fetches; surfaced to the Mini App UI |
-| `evaluate(guess, answer)` (static) | Standard two-pass green/yellow/gray scoring → `int[]` |
-| `hardModeViolation(priorGuesses, answer, guess)` (static) | Returns a human-readable reason a guess breaks hard mode, or `null` if allowed |
+| `loadWordList()` | Loads `/wordle-words.txt` (5-letter words) into the static in-memory set at class load |
+| `isValidWord(guess)` | Membership check against the word list |
+| `fetchSolution()` | GETs `nytimes.com/svc/wordle/v2/<date>.json` (date resolved in `Asia/Singapore`), regex-extracts `solution`; returns `null` on any failure |
+| `puzzleDate()` | The puzzle's calendar date (ISO `yyyy-MM-dd`, GMT+8) — the same date `fetchSolution()` fetches; surfaced to the Mini App UI |
+| `evaluate(guess, answer)` | Standard two-pass green/yellow/gray scoring → `int[]` |
+| `hardModeViolation(priorGuesses, answer, guess)` | Returns a human-readable reason a guess breaks hard mode, or `null` if allowed |
 
 ## API endpoints
 

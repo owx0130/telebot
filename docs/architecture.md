@@ -20,7 +20,7 @@ The code is organized into feature/responsibility packages under `telebot`:
 | `telebot.storage` | Redis access: `RedisConnection` + per-feature stores/repositories |
 | `telebot.model` | Plain data types: `UserState` enum, `Photo` record |
 
-**Layering**: `Bot` wires everything and routes; handlers orchestrate a feature by calling `Messenger` (output) and the storage classes (state). The bot itself runs on the long-polling single thread. The Wordle Mini App's web layer (`WebServer` + JSON API) and its threading model are documented in [wordle.md](wordle.md).
+**Layering**: `Bot` wires everything and routes; handlers orchestrate a feature by calling `Messenger` (output) and the storage classes (state). The bot itself runs on the long-polling single thread.
 
 **Entry points:** `telebot.Main` is the process entry point (loads `.env`, registers the bot, blocks the main thread); `telebot.Bot` is the composition root that builds storage/messenger/handlers and routes each `Update`. Start there; use the code-review-graph MCP tools to explore individual classes from there.
 

@@ -12,10 +12,10 @@ Code is organized into feature/responsibility packages under `telebot`: `telegra
 
 This file is a map; the details live in `docs/`. **Before editing code or answering a question in an area that a doc covers, always read that doc first**.
 
-- [docs/architecture.md](docs/architecture.md) — packages, key files, layering/threading, update routing, state machine, bot commands
-- [docs/storage.md](docs/storage.md) — Redis schema and the storage API (`UserStateStore`, `WordleSessionStore`, `PhotoRepository`)
-- [docs/wordle.md](docs/wordle.md) — Wordle Mini App: game logic, JSON API endpoints, Mini App auth
-- [docs/build-and-run.md](docs/build-and-run.md) — build commands, `.env` config, ngrok tunnel
+- [docs/architecture.md](docs/architecture.md) — *control flow*: packages, the update router, the photo-upload state machine, and bot commands.
+- [docs/storage.md](docs/storage.md) — *persistence*: the Redis schema and the stores on the `user_<id>` hash — per-user bot/upload state and per-user Wordle session state — plus the photo gallery.
+- [docs/wordle.md](docs/wordle.md) — *Wordle Mini App*: the embedded web server, auth, game logic, and JSON API.
+- [docs/build-and-run.md](docs/build-and-run.md) — building and running the jar, and the `.env` config it needs.
 
 ## Instructions
 
