@@ -63,4 +63,4 @@ Registered programmatically in `Messenger.registerCommands` via `SetMyCommands`:
 - `/wordle` — starts a Wordle game in **hard mode**
 - `/wordle_easy` — starts a Wordle game with normal rules
 
-Mid-flow inputs (not in the registered menu): `/cancel` (abort upload or Wordle), `/skip` (upload with empty caption).
+Mid-flow inputs (not in the registered menu): `/cancel` (abort the photo upload), `/skip` (upload with empty caption).

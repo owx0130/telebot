@@ -2,7 +2,7 @@
 
 A Telegram bot with two features: a shared **photo gallery** (upload photos with optional captions, retrieve a random one) and a **Wordle** game (the daily NYT word, easy or hard mode). Wordle is a **Telegram Mini App** — a hosted web page (board + on-screen keyboard with NYT-style green/yellow/gray letters) launched from the bot and backed by an embedded HTTP/JSON API.
 
-**Stack:** Java 25 · Maven (shaded fat jar, main class `telebot.Main`) · TelegramBots v9.2.1 (long-polling) · Redis via Jedis · JDK `HttpServer` for the Mini App · SLF4J · dotenv-java config.
+**Stack:** Java 25 · Maven (shaded fat jar, main class `telebot.Main`) · TelegramBots v9.2.1 (long-polling) · Redis via Jedis · JDK `HttpServer` for the Mini App · SLF4J · dotenv-java config. No automated tests — verify changes by building and running (see docs/build-and-run.md).
 
 Code is organized into feature/responsibility packages under `telebot`: `telegram` (send API), `handler` (feature controllers), `game` (pure Wordle logic), `web` (Mini App backend), `storage` (Redis), `model` (data types). See the docs below.
 
