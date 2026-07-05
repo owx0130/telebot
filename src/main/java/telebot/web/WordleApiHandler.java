@@ -74,8 +74,8 @@ public class WordleApiHandler implements HttpHandler {
 
     private void handleStart(HttpExchange exchange, long userId, Map<String, String> params) throws IOException {
         boolean requestedHard = "true".equalsIgnoreCase(params.get("hardMode"));
-        String today = Wordle.fetchSolution();
-        if (today == null) {
+        String answer = Wordle.fetchSolution();
+        if (answer == null) {
             send(exchange, 503, errorJson("Sorry, I couldn't fetch today's Wordle. Please try again later."));
             return;
         }
@@ -85,11 +85,11 @@ public class WordleApiHandler implements HttpHandler {
         // so resetting here guarantees every reopen starts clean regardless of how the app was
         // closed. (The close-time /end call remains as best-effort immediate cleanup.)
         List<String> guesses = new ArrayList<>();
-        sessions.setWordleAnswer(userId, today);
+        sessions.setWordleAnswer(userId, answer);
         sessions.setWordleGuesses(userId, guesses);
         sessions.setWordleHardMode(userId, requestedHard);
 
-        send(exchange, 200, boardJson(guesses, today, requestedHard, false));
+        send(exchange, 200, boardJson(guesses, answer, requestedHard, false));
     }
 
     private void handleGuess(HttpExchange exchange, long userId, Map<String, String> params) throws IOException {

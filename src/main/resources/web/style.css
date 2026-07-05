@@ -28,10 +28,11 @@ body {
 }
 
 #title {
-    font-weight: 800;
-    letter-spacing: 0.18em;
-    font-size: 1.5rem;
-    padding: 0.5rem 0;
+    /* NYT's logo face is Karnak Condensed; fall back through common slab serifs. */
+    font-family: "Karnak Condensed", Rockwell, "Roboto Slab", Georgia, serif;
+    font-weight: 700;
+    font-size: 1.75rem;
+    padding: 0.35rem 0;
     border-bottom: 1px solid var(--border);
     width: 100%;
     text-align: center;
@@ -40,8 +41,8 @@ body {
 #mode-tag {
     display: inline-block;
     margin-left: 0.5rem;
+    font-family: "Helvetica Neue", Arial, sans-serif;
     font-size: 0.7rem;
-    letter-spacing: normal;
     font-weight: 600;
     color: var(--yellow);
     vertical-align: middle;
@@ -56,16 +57,24 @@ body {
     padding: 0.35rem 0 0.1rem;
 }
 
+/* NYT-style toast: a white pill floating over the board, hidden when there is no text. */
 #message {
-    min-height: 1.6rem;
-    padding: 0.4rem 0.8rem;
-    font-size: 0.95rem;
+    position: fixed;
+    top: 5.4rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    max-width: 90vw;
+    background: var(--fg);
+    color: var(--bg);
+    font-size: 0.9rem;
+    font-weight: 700;
     text-align: center;
-    color: #f5793b;
-    font-weight: 600;
+    padding: 0.65rem 0.8rem;
+    border-radius: 4px;
 }
 
-#message.win { color: var(--green); }
+#message:empty { display: none; }
 
 /* Board */
 #board {
@@ -93,7 +102,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.8rem;
+    font-size: 2rem;
     font-weight: 700;
     text-transform: uppercase;
     border: 2px solid var(--border);
@@ -105,6 +114,49 @@ body {
 .tile.green  { background: var(--green);  border-color: var(--green); }
 .tile.yellow { background: var(--yellow); border-color: var(--yellow); }
 .tile.absent { background: var(--absent); border-color: var(--absent); }
+
+/* Animations (NYT choreography). The flip is split into two half-turns so the color
+   class can be applied at the midpoint, while the tile face is edge-on. The half-flip
+   duration and per-tile stagger must match FLIP_MS / FLIP_STAGGER in app.js. */
+
+.tile.pop { animation: pop 120ms ease-in-out; }
+@keyframes pop {
+    50% { transform: scale(1.1); }
+}
+
+.tile.flip-in { animation: flip-in 250ms ease-in forwards; }
+@keyframes flip-in {
+    from { transform: rotateX(0); }
+    to   { transform: rotateX(-90deg); }
+}
+
+.tile.flip-out { animation: flip-out 250ms ease-out; }
+@keyframes flip-out {
+    from { transform: rotateX(-90deg); }
+    to   { transform: rotateX(0); }
+}
+
+.row.shake { animation: shake 600ms; }
+@keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+}
+
+.tile.bounce { animation: bounce 1000ms ease; }
+@keyframes bounce {
+    0%, 20% { transform: translateY(0); }
+    40% { transform: translateY(-30px); }
+    50% { transform: translateY(5px); }
+    60% { transform: translateY(-15px); }
+    80% { transform: translateY(2px); }
+    100% { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tile.pop, .tile.flip-in, .tile.flip-out, .row.shake, .tile.bounce { animation: none; }
+}
 
 /* Keyboard */
 #keyboard {

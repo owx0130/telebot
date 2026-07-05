@@ -32,6 +32,16 @@
     const params = new URLSearchParams(window.location.search);
     const hardModeRequested = params.get("hard") === "true";
 
+    // NYT win messages, indexed by number of guesses taken (unlimited guesses here,
+    // so anything past six gets the last one).
+    const WIN_MESSAGES = ["Genius", "Magnificent", "Impressive", "Splendid", "Great", "Phew"];
+
+    // Reveal timing. Must match the flip-in/flip-out keyframe durations in style.css.
+    const REDUCED_MOTION = window.matchMedia
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const FLIP_MS = REDUCED_MOTION ? 0 : 250;      // one half-turn of a tile
+    const FLIP_STAGGER = REDUCED_MOTION ? 0 : 300; // delay between successive tiles
+
     let wordLength = 5;
     let guesses = [];          // [{ word, eval }]
     let keyboardState = {};     // letter -> 0|1|2
@@ -41,9 +51,15 @@
 
     const initData = tg ? tg.initData : "";
 
+    // Errors show as a transient NYT-style toast; the win message stays up.
+    let messageTimer = null;
     function showMessage(text, isWin) {
+        clearTimeout(messageTimer);
         messageEl.textContent = text || "";
         messageEl.classList.toggle("win", !!isWin);
+        if (text && !isWin) {
+            messageTimer = setTimeout(() => { messageEl.textContent = ""; }, 1600);
+        }
     }
 
     async function api(endpoint, extra) {
@@ -58,7 +74,7 @@
         return res.json();
     }
 
-    function applyState(data) {
+    function applyState(data, celebrate) {
         if (typeof data.wordLength === "number") wordLength = data.wordLength;
         if (typeof data.hardMode === "boolean") {
             modeTagEl.textContent = data.hardMode ? "HARD" : "";
@@ -70,7 +86,8 @@
         current = "";
         render();
         if (won) {
-            showMessage(data.answer ? "Solved! 🎉" : "Solved! 🎉", true);
+            showMessage(WIN_MESSAGES[Math.min(guesses.length, WIN_MESSAGES.length) - 1], true);
+            if (celebrate) bounceRow(boardEl.lastElementChild);
         }
     }
 
@@ -135,12 +152,56 @@
         }
     }
 
+    // NYT reveal choreography: each tile of the submitted row half-flips edge-on,
+    // takes its color while invisible, then flips back out. `done` fires once the
+    // last tile has settled.
+    function revealRow(rowEl, evalArr, done) {
+        const tiles = Array.from(rowEl.children);
+        tiles.forEach((tile, i) => {
+            setTimeout(() => {
+                tile.classList.add("flip-in");
+                setTimeout(() => {
+                    tile.classList.remove("flip-in");
+                    tile.classList.add(STATE_CLASS[evalArr[i]], "flip-out");
+                }, FLIP_MS);
+            }, i * FLIP_STAGGER);
+        });
+        setTimeout(done, (tiles.length - 1) * FLIP_STAGGER + FLIP_MS * 2);
+    }
+
+    // Board as it should look the instant a guess is accepted: prior guesses colored,
+    // the just-submitted word uncolored (its colors arrive via the flip), no input row.
+    function renderPreRevealBoard(newGuesses) {
+        boardEl.innerHTML = "";
+        for (let i = 0; i < newGuesses.length - 1; i++) {
+            boardEl.appendChild(buildRow(newGuesses[i].word, newGuesses[i].eval));
+        }
+        boardEl.appendChild(buildRow(newGuesses[newGuesses.length - 1].word, null));
+    }
+
+    function shakeCurrentRow() {
+        const rowEl = boardEl.lastElementChild;
+        if (!rowEl) return;
+        rowEl.classList.add("shake");
+        setTimeout(() => rowEl.classList.remove("shake"), 650);
+    }
+
+    function bounceRow(rowEl) {
+        if (!rowEl) return;
+        Array.from(rowEl.children).forEach((tile, i) => {
+            tile.style.animationDelay = (i * 100) + "ms";
+            tile.classList.add("bounce");
+        });
+    }
+
     function addLetter(ch) {
         if (won || busy) return;
         if (current.length >= wordLength) return;
         current += ch;
         showMessage("");
         renderBoard();
+        const tile = boardEl.lastElementChild.children[current.length - 1];
+        if (tile) tile.classList.add("pop");
     }
 
     function deleteLetter() {
@@ -153,21 +214,38 @@
         if (won || busy) return;
         if (current.length !== wordLength) {
             showMessage("Not enough letters.");
+            shakeCurrentRow();
             return;
         }
         busy = true;
+        let data;
         try {
-            const data = await api("guess", { guess: current });
-            if (!data.ok) {
-                showMessage(data.error || "Invalid guess.");
-                return;
-            }
-            applyState(data);
+            data = await api("guess", { guess: current });
         } catch (e) {
             showMessage("Network error. Try again.");
-        } finally {
             busy = false;
+            return;
         }
+        if (!data.ok) {
+            showMessage(data.error || "Invalid guess.");
+            shakeCurrentRow();
+            busy = false;
+            return;
+        }
+        const newGuesses = data.guesses || [];
+        if (newGuesses.length === 0) {
+            applyState(data);
+            busy = false;
+            return;
+        }
+        // Flip the submitted row before applying the full state, so the keyboard
+        // recolors only once the reveal finishes — input stays locked meanwhile.
+        current = "";
+        renderPreRevealBoard(newGuesses);
+        revealRow(boardEl.lastElementChild, newGuesses[newGuesses.length - 1].eval, () => {
+            applyState(data, true);
+            busy = false;
+        });
     }
 
     // Destroy the server-side session when the Mini App is closed/torn down. Uses sendBeacon so
